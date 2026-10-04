@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Eventos universitarios</title>
+<style>
+:root{--bg:#eef2f4;--fg:#12232e;--card:#fff;--ac:#0b6e6e;--acfg:#fff;--bd:#c6d2d8;--bad:#b3261e;--ok:#17703a}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1a21;--fg:#e6eef2;--card:#16262f;--ac:#4fc3c3;--acfg:#06201f;--bd:#2c424d;--bad:#ff8a80;--ok:#7be0a1}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
+header{padding:20px 16px 0;max-width:960px;margin:auto}h1{font:700 28px Georgia,serif;margin:0 0 12px}h2{font:700 20px Georgia,serif;margin:0 0 12px}
+nav{display:flex;gap:4px;flex-wrap:wrap;border-bottom:2px solid var(--bd)}
+nav button{background:none;border:0;padding:10px 14px;color:var(--fg);font:inherit;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px}
+nav button.on{border-color:var(--ac);font-weight:700}
+main{max-width:960px;margin:auto;padding:16px}section{display:none;background:var(--card);border:1px solid var(--bd);border-radius:6px;padding:20px}section.on{display:block}
+form{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;align-items:end;margin-bottom:12px}
+label{display:flex;flex-direction:column;gap:4px;font-weight:600}
+input,select{font:inherit;padding:8px;border:1px solid var(--bd);border-radius:4px;background:var(--bg);color:var(--fg)}
+button.p{background:var(--ac);color:var(--acfg);border:0;border-radius:4px;padding:9px 16px;font:inherit;font-weight:700;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--ac);outline-offset:2px}
+.sc{overflow-x:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--bd);white-space:nowrap}
+.ok{color:var(--ok);font-weight:600}.bad{color:var(--bad);font-weight:600}.x{background:none;border:1px solid var(--bad);color:var(--bad);border-radius:4px;cursor:pointer;padding:3px 8px}
+</style></head><body>
+<header><h1>Eventos universitarios</h1><nav id="nav"></nav></header>
+<main>
+<section id="crear"><h2>Crear evento</h2>
+<form id="f-crear"><label>Nombre<input name="nombre" required></label><label>Fecha<input type="date" name="fecha" required></label><label>Lugar<input name="lugar" required></label><label>Categoría<input name="categoria" required placeholder="académico, cultural…"></label><label>Cupo<input type="number" name="cupo" min="1" required></label><button class="p">Crear evento</button></form><p id="m-crear"></p></section>
+
+<section id="listar"><h2>Eventos</h2>
+<form id="f-listar"><label>Categoría<input name="categoria"></label><label>Nombre<input name="nombre"></label><label>Lugar<input name="lugar"></label><label>Desde<input type="date" name="desde"></label><label>Hasta<input type="date" name="hasta"></label><button class="p">Filtrar</button></form><p id="m-listar"></p><div id="r-listar" class="sc"></div></section>
+
+<section id="inscribir"><h2>Inscribir participante</h2>
+<form id="f-inscribir"><label>Evento<select name="evento" class="sel" required></select></label><label>Nombre<input name="nombre" required></label><label>Correo<input type="email" name="correo" required></label><label>Programa<input name="programa" required></label><label>Semestre (1 a 12)<input type="number" name="semestre" min="1" max="12" required></label><button class="p">Inscribir</button></form><p id="m-inscribir"></p></section>
+
+<section id="participantes"><h2>Participantes por evento</h2>
+<form id="f-participantes"><label>Evento<select name="evento" class="sel" required></select></label><label>Programa<input name="programa"></label><label>Semestre<input type="number" name="semestre" min="1" max="12"></label><button class="p">Consultar</button></form><p id="m-participantes"></p><div id="r-participantes" class="sc"></div></section>
+
+<section id="reportes"><h2>Reportes</h2>
+<form id="f-reportes"><label>Categoría<input name="categoria"></label><label>Desde<input type="date" name="desde"></label><label>Hasta<input type="date" name="hasta"></label><label>Programa<input name="programa"></label><label>Semestre<input type="number" name="semestre" min="1" max="12"></label><button class="p">Generar reporte</button></form><p id="m-reportes"></p><div id="r-reportes" class="sc"></div></section>
+</main>
+<script src="config.js"></script>
+<script>
+const C=window.CONFIG,$=s=>document.querySelector(s);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+async function api(base,path,method='GET',body){
+  const r=await fetch(base+path,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+  const d=await r.json().catch(()=>null);if(!r.ok)throw new Error((d&&d.error)||'Error '+r.status);return d}
+const msg=(id,t,ok)=>{const e=$(id);e.textContent=t;e.className=ok?'ok':'bad'};
+const qs=f=>{const p=new URLSearchParams();for(const[k,v]of new FormData(f))if(v&&k!=='evento')p.set(k,v);const s=p.toString();return s?'?'+s:''};
+const body=f=>{const o=Object.fromEntries(new FormData(f));for(const k of['cupo','semestre'])if(k in o)o[k]=Number(o[k]);return o};
+const tabla=(cols,rows)=>rows.length?'<table><tr>'+cols.map(c=>'<th>'+c[0]+'</th>').join('')+'</tr>'+rows.map(r=>'<tr>'+cols.map(c=>'<td>'+(c[1]==='_x'?'<button class="x" data-id="'+r.id+'">Eliminar</button>':esc(r[c[1]]))+'</td>').join('')+'</tr>').join('')+'</table>':'<p>No hay resultados con esos filtros.</p>';
+function on(id,fn){$('#f-'+id).addEventListener('submit',async e=>{e.preventDefault();msg('#m-'+id,'Cargando… (si el servicio estaba dormido puede tardar hasta un minuto)',true);
+  try{await fn(e.target)}catch(x){msg('#m-'+id,x.message);}})}
+async function cargarEventos(){const ev=await api(C.EVENTOS,'/eventos');
+  document.querySelectorAll('.sel').forEach(s=>{const v=s.value;s.innerHTML=ev.map(e=>'<option value="'+e.id+'">'+esc(e.nombre)+' ('+e.fecha+')</option>').join('');s.value=v||(ev[0]&&ev[0].id)})}
+async function listar(){const d=await api(C.EVENTOS,'/eventos'+qs($('#f-listar')));
+  $('#r-listar').innerHTML=tabla([['ID','id'],['Nombre','nombre'],['Fecha','fecha'],['Lugar','lugar'],['Categoría','categoria'],['Cupo','cupo'],['','_x']],d);msg('#m-listar',d.length+' evento(s)',true)}
+on('crear',async f=>{const e=await api(C.EVENTOS,'/eventos','POST',body(f));msg('#m-crear','Evento creado con id '+e.id,true);f.reset();cargarEventos()});
+on('listar',listar);
+on('inscribir',async f=>{const o=body(f),id=o.evento;delete o.evento;const r=await api(C.INSCRIPCIONES,'/eventos/'+id+'/inscripciones','POST',o);msg('#m-inscribir','Inscripción registrada: '+r.participante.nombre,true)});
+on('participantes',async f=>{const id=new FormData(f).get('evento');const d=await api(C.INSCRIPCIONES,'/eventos/'+id+'/participantes'+qs(f));
+  $('#r-participantes').innerHTML=tabla([['Nombre','nombre'],['Correo','correo'],['Programa','programa'],['Semestre','semestre']],d.participantes);msg('#m-participantes',d.evento+': '+d.total+' inscrito(s) de '+d.cupo+' cupos',true)});
+on('reportes',async f=>{const d=await api(C.REPORTES,'/reportes'+qs(f));
+  $('#r-reportes').innerHTML=tabla([['Evento','nombre'],['Fecha','fecha'],['Categoría','categoria'],['Cupo','cupo'],['Inscritos','inscritos'],['Ocupación %','ocupacionPorcentaje']],d.eventos);
+  msg('#m-reportes',d.totalEventos+' evento(s), '+d.totalInscripciones+' inscripción(es)',true)});
+$('#r-listar').addEventListener('click',async e=>{const id=e.target.dataset.id;if(!id||!confirm('¿Eliminar el evento '+id+'?'))return;
+  try{await api(C.EVENTOS,'/eventos/'+id,'DELETE');await listar();cargarEventos()}catch(x){msg('#m-listar',x.message)}});
+const secs=[...document.querySelectorAll('section')];
+secs.forEach(s=>{const b=document.createElement('button');b.textContent=s.querySelector('h2').textContent;b.onclick=()=>{secs.forEach(x=>x.classList.toggle('on',x===s));[...$('#nav').children].forEach(x=>x.classList.toggle('on',x===b))};$('#nav').append(b)});
+$('#nav').firstChild.click();
+cargarEventos().catch(x=>msg('#m-crear','No se pudo conectar con el servicio de eventos: '+x.message));
+</script></body></html>

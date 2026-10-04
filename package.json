@@ -1,0 +1,1 @@
+{ "name": "eventos-universitarios", "version": "1.0.0", "scripts": { "start": "node start-all.js", "test": "node test/smoke.js" }, "engines": { "node": ">=18" } }

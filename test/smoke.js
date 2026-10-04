@@ -1,0 +1,54 @@
+// Prueba automática: arranca los 3 servicios en puertos de prueba y verifica los casos principales
+const { spawn } = require('child_process'), os = require('os'), fs = require('fs'), path = require('path');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ev-')), E = 'http://localhost:4001', I = 'http://localhost:4002', R = 'http://localhost:4003';
+const env = { ...process.env, DATA_DIR: tmp, EVENTOS_URL: E, INSCRIPCIONES_URL: I };
+const kids = [['eventos-service', 4001], ['inscripciones-service', 4002], ['reportes-service', 4003]].map(([d, p]) =>
+  spawn('node', ['server.js'], { cwd: path.join(__dirname, '..', d), env: { ...env, PORT: p }, stdio: 'ignore' }));
+let ok = 0, bad = 0;
+const req = async (m, u, b) => { const r = await fetch(u, { method: m, headers: { 'Content-Type': 'application/json' }, body: b === undefined ? undefined : typeof b === 'string' ? b : JSON.stringify(b) }); return [r.status, await r.json().catch(() => null)]; };
+const t = async (n, m, u, b, st, chk = () => true) => { const [s, d] = await req(m, u, b); const p = s === st && chk(d); p ? ok++ : bad++; console.log(p ? 'OK  ' : 'FALLA', n, p ? '' : `(esperado ${st}, recibido ${s} ${JSON.stringify(d)})`); };
+const lau = { nombre: 'Laura Gómez', correo: 'Laura@U.edu', programa: 'Ingeniería de Sistemas', semestre: 5 };
+(async () => {
+  for (let i = 0; i < 50; i++) { try { await Promise.all([E, I, R].map(u => fetch(u + '/health'))); break; } catch { await new Promise(r => setTimeout(r, 100)); } }
+  await t('health eventos', 'GET', E + '/health', undefined, 200);
+  await t('health inscripciones', 'GET', I + '/health', undefined, 200);
+  await t('health reportes', 'GET', R + '/health', undefined, 200);
+  await t('crear evento', 'POST', E + '/eventos', { nombre: 'Feria', fecha: '2026-11-15', lugar: 'Auditorio', categoria: 'Académico', cupo: 100 }, 201, d => d.id === 1 && d.categoria === 'académico');
+  await t('crear evento cupo 1', 'POST', E + '/eventos', { nombre: 'Concierto', fecha: '2026-12-01', lugar: 'Plaza', categoria: 'cultural', cupo: 1 }, 201);
+  await t('crear evento inválido -> 400', 'POST', E + '/eventos', { nombre: '', fecha: '2026-02-30', cupo: 0 }, 400);
+  await t('JSON inválido -> 400', 'POST', E + '/eventos', '{malo', 400);
+  await t('listar', 'GET', E + '/eventos', undefined, 200, d => d.length === 2);
+  await t('filtro categoria', 'GET', E + '/eventos?categoria=cultural', undefined, 200, d => d.length === 1);
+  await t('filtro desde', 'GET', E + '/eventos?desde=2026-11-20', undefined, 200, d => d.length === 1);
+  await t('filtro hasta', 'GET', E + '/eventos?hasta=2026-11-20', undefined, 200, d => d.length === 1);
+  await t('filtro nombre y lugar', 'GET', E + '/eventos?nombre=fer&lugar=audi', undefined, 200, d => d.length === 1);
+  await t('filtro fecha inválida -> 400', 'GET', E + '/eventos?desde=basura', undefined, 400);
+  await t('obtener evento', 'GET', E + '/eventos/1', undefined, 200, d => d.nombre === 'Feria');
+  await t('evento inexistente -> 404', 'GET', E + '/eventos/99', undefined, 404);
+  await t('id no numérico -> 400', 'GET', E + '/eventos/abc', undefined, 400);
+  await t('actualizar evento', 'PUT', E + '/eventos/1', { nombre: 'Feria 2', fecha: '2026-11-15', lugar: 'Aula Magna', categoria: 'académico', cupo: 100 }, 200, d => d.lugar === 'Aula Magna');
+  await t('actualizar inválido -> 400', 'PUT', E + '/eventos/1', { nombre: 'x' }, 400);
+  await t('actualizar inexistente -> 404', 'PUT', E + '/eventos/99', { nombre: 'x', fecha: '2026-11-15', lugar: 'a', categoria: 'a', cupo: 1 }, 404);
+  await t('inscribir', 'POST', I + '/eventos/1/inscripciones', lau, 201, d => d.participante.correo === 'laura@u.edu');
+  await t('inscripción duplicada -> 409', 'POST', I + '/eventos/1/inscripciones', lau, 409);
+  await t('inscribir evento inexistente -> 404', 'POST', I + '/eventos/99/inscripciones', lau, 404);
+  await t('inscribir datos inválidos -> 400', 'POST', I + '/eventos/1/inscripciones', { ...lau, semestre: 20, correo: 'x' }, 400);
+  await t('inscribir carlos (cupo 1)', 'POST', I + '/eventos/2/inscripciones', { nombre: 'Carlos', correo: 'c@u.edu', programa: 'Derecho', semestre: 3 }, 201);
+  await t('sin cupos -> 409', 'POST', I + '/eventos/2/inscripciones', { nombre: 'Ana', correo: 'a@u.edu', programa: 'Derecho', semestre: 2 }, 409);
+  await t('participantes', 'GET', I + '/eventos/1/participantes', undefined, 200, d => d.total === 1);
+  await t('participantes filtro semestre', 'GET', I + '/eventos/1/participantes?semestre=9', undefined, 200, d => d.total === 0);
+  await t('participantes semestre inválido -> 400', 'GET', I + '/eventos/1/participantes?semestre=x', undefined, 400);
+  await t('participantes evento inexistente -> 404', 'GET', I + '/eventos/99/participantes', undefined, 404);
+  await t('reporte general', 'GET', R + '/reportes', undefined, 200, d => d.totalEventos === 2 && d.totalInscripciones === 2);
+  await t('reporte categoria', 'GET', R + '/reportes?categoria=cultural', undefined, 200, d => d.totalEventos === 1 && d.totalInscripciones === 1);
+  await t('reporte programa+semestre', 'GET', R + '/reportes?programa=Ingeniería de Sistemas&semestre=5', undefined, 200, d => d.totalInscripciones === 1);
+  await t('reporte fechas', 'GET', R + '/reportes?desde=2026-11-01&hasta=2026-11-30', undefined, 200, d => d.totalEventos === 1);
+  await t('reporte semestre inválido -> 400', 'GET', R + '/reportes?semestre=99', undefined, 400);
+  await t('reporte fecha inválida -> 400', 'GET', R + '/reportes?desde=mala', undefined, 400);
+  await t('ruta desconocida -> 404', 'GET', R + '/nada', undefined, 404);
+  await t('eliminar evento', 'DELETE', E + '/eventos/2', undefined, 200);
+  await t('evento eliminado -> 404', 'GET', E + '/eventos/2', undefined, 404);
+  kids[0].kill(); await new Promise(r => setTimeout(r, 300));
+  await t('servicio caído -> 500', 'POST', I + '/eventos/1/inscripciones', { ...lau, correo: 'z@u.edu' }, 500);
+  console.log(`\n${ok} correctas, ${bad} con falla`); kids.forEach(k => k.kill()); process.exit(bad ? 1 : 0);
+})();
